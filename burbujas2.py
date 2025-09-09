@@ -25,18 +25,19 @@ def calibrate_offset(num_samples=100):
     print(f"Offset calibrado: {offset:.4f} slm")
     return offset
 
-offset = calibrate_offset()  # Ejecuta calibración al inicio
+offset = calibrate_offset()  # Ejecuta al inicio
 
 volume_total = 0.0
 start_time = time.time()
 prev_time = start_time
 prev_count = 0
 flujo_filtered = 0.0  # Inicial para EMA
-alpha = 0.2  # Factor de suavizado EMA (0-1; menor = más suavizado)
+alpha = 0.1  # Factor EMA (0-1; menor = más suavizado, pero más lag)
+noise_threshold = 0.2  # slm; ignora flujo < este valor (de datasheet)
 
 times = []
-flows = []  # Flujos crudos
-flows_filtered = []  # Flujos filtrados
+flows = []  # Crudos
+flows_filtered = []  # Filtrados
 volumes = []
 bubble_times = []
 
@@ -51,25 +52,24 @@ try:
             if len(parts) == 3:
                 try:
                     raw_flujo = int(parts[0])
-                    flujo = float(parts[1]) - offset  # Resta offset calibrado
+                    flujo = float(parts[1]) - offset  # Resta offset
                     burb_count = int(parts[2])
 
                     # Filtro EMA
                     flujo_filtered = alpha * flujo + (1 - alpha) * flujo_filtered
 
-                    # Opcional: Ignora picos extremos (ej. si >3x el filtrado previo)
-                    # if abs(flujo) > 3 * abs(flujo_filtered):
-                    #     flujo_filtered = prev_flujo_filtered  # Usa anterior
-                    # prev_flujo_filtered = flujo_filtered
+                    # Clip a positivo (asumiendo flujo unidireccional)
+                    flujo_filtered = max(0.0, flujo_filtered)
 
                     curr_time = time.time() - start_time
                     dt = curr_time - prev_time
                     prev_time = curr_time
 
-                    # Integrar flujo filtrado (en L)
-                    volume_total += flujo_filtered * (dt / 60.0)
+                    # Integrar solo si > umbral de ruido
+                    if abs(flujo_filtered) > noise_threshold:
+                        volume_total += flujo_filtered * (dt / 60.0)
 
-                    # Resto del código igual (detección de burbujas, etc.)
+                    # Detección de reinicio y burbujas (igual)
                     if burb_count < prev_count:
                         volume_total = 0.0
 
@@ -85,9 +85,10 @@ try:
                     else:
                         vol_por_burbuja = 0.0
 
+                    # Almacenar para gráficas
                     times.append(curr_time)
-                    flows.append(flujo)  # Crudo para gráfica
-                    flows_filtered.append(flujo_filtered)  # Filtrado
+                    flows.append(flujo)
+                    flows_filtered.append(flujo_filtered)
                     volumes.append(volume_total)
 
                     print(f"Flujo crudo: {flujo:.4f} slm, Flujo filtrado: {flujo_filtered:.4f} slm, Burbujas: {burb_count}, Volumen Total: {volume_total:.4f} L, Volumen por Burbuja: {vol_por_burbuja:.4f} L")
@@ -99,12 +100,12 @@ except KeyboardInterrupt:
 finally:
     ser.close()
 
-# Generar gráficas (agrega flujo filtrado)
+# Generar gráficas
 if times:
     fig, ax1 = plt.subplots(figsize=(12, 6))
 
     ax1.plot(times, flows, 'b-', label='Flujo crudo (slm)')
-    ax1.plot(times, flows_filtered, 'm-', label='Flujo filtrado (slm)')  # Nuevo
+    ax1.plot(times, flows_filtered, 'm-', label='Flujo filtrado (slm)')
     ax1.set_xlabel('Tiempo (s)')
     ax1.set_ylabel('Flujo (slm)', color='b')
     ax1.tick_params(axis='y', labelcolor='b')
