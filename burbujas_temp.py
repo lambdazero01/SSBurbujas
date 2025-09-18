@@ -4,18 +4,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import csv
 import datetime
-import requests  # Para API
-import json      # Para parsear JSON
+import requests  # Para scraping
+import re       # Para extraer datos con regex
 
 # Configura el puerto serial
 SERIAL_PORT = 'COM3'  # Cambia esto al puerto de tu sensor (e.g., 'COM4')
 BAUD_RATE = 115200
 
 ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-
-# Tu clave API de OpenWeatherMap (regístrate en https://openweathermap.org/api)
-# 4bfdaee8d8a4631e57ac318cf7c7cc0d
-API_KEY = 'TU_CLAVE_API_AQUI'  # Reemplaza con tu clave real, e.g., 'abcd1234efgh5678'
 
 # Calibración de offset: promedio de lecturas en cero flujo
 def calibrate_offset(num_samples=100):
@@ -35,57 +31,50 @@ def calibrate_offset(num_samples=100):
 
 offset = calibrate_offset()  # Ejecuta al inicio
 
-# Función para obtener clima de OpenWeatherMap API
-def obtener_clima(lat, lon):
+# Función para obtener clima scrapeando el sitio de BUAP (RAMM07)
+def obtener_clima():
     """
-    Obtiene temperatura y presión de OpenWeatherMap API.
-    lat/lon: Coordenadas GPS (e.g., 19.4326 para lat de Mexico City, -99.1332 para lon).
+    Scrape.a datos de http://urban.diau.buap.mx/estaciones/ramm07/ramm07.php para temperatura y presión (presión usa default si no disponible).
     Retorna (temp, press) o (None, None) si falla.
     """
     try:
-        # URL para datos actuales: https://api.openweathermap.org/data/2.5/weather
-        url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
+        url = "http://urban.diau.buap.mx/estaciones/ramm07/ramm07.php"  # URL específica para RAMM07
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
-            data = response.json()
-            temp = data['main']['temp']  # En °C (por units=metric)
-            press = data['main']['pressure']  # En hPa
-            print(f"Clima actualizado (OpenWeatherMap): Temp={temp}°C, Press={press} hPa")
-            return temp, press
+            text = response.text
+            
+            # Regex para extraer datos (basado en patrones de RAMM00; asume formato similar)
+            temp_match = re.search(r'Temperatura promedio (\d+\.\d+) °C', text)
+            hum_match = re.search(r'Humedad Relativa: (\d+\.\d+) %', text)  # Opcional
+            wind_match = re.search(r'Viento del (\w+) a (\d+\.\d+) m/s', text)
+            timestamp_match = re.search(r'RAMM07 \((\d{2}-\d{2}-\d{4} \d{2}:\d{2})\)', text)
+            
+            temp = float(temp_match.group(1)) if temp_match else None
+            press = 1013.0  # Default, ya que no está visible; ajusta si encuentras en la página
+            
+            if temp is not None:
+                print(f"Clima scrapeado (BUAP RAMM07): Temp={temp}°C, Press={press} hPa (default)")
+                return temp, press
+            else:
+                print("No se encontraron datos en el scraping de RAMM07.")
+                return None, None
         else:
-            print(f"Error en API: {response.status_code} - {response.text}")
+            print(f"Error al acceder al sitio de RAMM07: {response.status_code}")
             return None, None
     except Exception as e:
-        print(f"Error al consultar API: {e}")
+        print(f"Error al scrape.ar RAMM07: {e}")
         return None, None
 
-# Configuración de ubicación (pide al inicio; usa coordenadas o ciudad)
-print("Configurando ubicación para clima...")
-ubicacion_input = input("Ingresa latitud y longitud (e.g., 19.4326,-99.1332) o ciudad (e.g., Mexico City): ").strip()
-if ',' in ubicacion_input:
-    lat, lon = map(float, ubicacion_input.split(','))
-else:
-    # Si es ciudad, usa coordenadas aproximadas (agregué más ejemplos)
-    ubicacion_lower = ubicacion_input.lower()
-    if "mexico" in ubicacion_lower:
-        lat, lon = 19.4326, -99.1332
-    elif "bogota" in ubicacion_lower:
-        lat, lon = 4.7110, -74.0721
-    elif "buenos aires" in ubicacion_lower:
-        lat, lon = -34.6037, -58.3816
-    else:
-        lat, lon = 0, 0  # Default; ajusta manualmente
-    print(f"Usando coordenadas aproximadas para '{ubicacion_input}': lat={lat}, lon={lon}")
-
-# Obtener clima inicial
-temp_actual, press_actual = obtener_clima(lat, lon)
+# Obtener clima inicial (no necesita ubicación)
+temp_actual, press_actual = obtener_clima()
 if temp_actual is None:
-    print("No se pudo obtener clima inicial. Usando valores por defecto (25°C, 1013 hPa).")
+    print("No se pudo obtener clima inicial de RAMM07. Usando valores por defecto (25°C, 1013 hPa).")
     temp_actual, press_actual = 25.0, 1013.0
 
 last_clima_update = time.time()  # Para actualizar cada 60s
 update_interval = 60  # Segundos entre actualizaciones de clima
 
+# Resto del código igual...
 volume_total = 0.0
 start_time = time.time()
 prev_time = start_time
@@ -108,14 +97,14 @@ bubble_temps = []  # Temp al momento de cada burbuja
 bubble_pressures = []  # Press al momento de cada burbuja
 
 print("Iniciando lectura de datos del sensor...")
-print(f"Clima inicial: Temp={temp_actual}°C, Press={press_actual} hPa. Actualizando cada {update_interval}s.")
+print(f"Clima inicial (RAMM07): Temp={temp_actual}°C, Press={press_actual} hPa. Actualizando cada {update_interval}s.")
 print("Presiona Ctrl+C para detener y generar las gráficas.")
 
 try:
     while True:
         # Actualizar clima cada intervalo
         if time.time() - last_clima_update >= update_interval:
-            temp_actual, press_actual = obtener_clima(lat, lon)
+            temp_actual, press_actual = obtener_clima()
             if temp_actual is not None:
                 last_clima_update = time.time()
             else:
@@ -228,7 +217,7 @@ if times:
         ax4.set_ylabel('Volumen por burbuja (L)')
         ax4.legend()
 
-    plt.suptitle('Flujo, Volumen, Temp, Press y Burbujas a lo largo del Tiempo (OpenWeatherMap)')
+    plt.suptitle('Flujo, Volumen, Temp, Press y Burbujas a lo largo del Tiempo (Scraping BUAP RAMM07)')
     plt.tight_layout()
     plt.show()
 else:
