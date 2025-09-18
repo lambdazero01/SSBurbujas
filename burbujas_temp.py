@@ -14,6 +14,7 @@ BAUD_RATE = 115200
 ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
 
 # Tu clave API de OpenWeatherMap (regístrate en https://openweathermap.org/api)
+# 4bfdaee8d8a4631e57ac318cf7c7cc0d
 API_KEY = 'TU_CLAVE_API_AQUI'  # Reemplaza con tu clave real, e.g., 'abcd1234efgh5678'
 
 # Calibración de offset: promedio de lecturas en cero flujo
