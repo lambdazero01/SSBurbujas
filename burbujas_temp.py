@@ -4,14 +4,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import csv
 import datetime
-import requests  # Nueva: para API
-import json      # Nueva: para parsear JSON
+import requests  # Para API
+import json      # Para parsear JSON
 
 # Configura el puerto serial
-SERIAL_PORT = 'COM3'  # Cambia esto
+SERIAL_PORT = 'COM3'  # Cambia esto al puerto de tu sensor (e.g., 'COM4')
 BAUD_RATE = 115200
 
 ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+
+# Tu clave API de OpenWeatherMap (regístrate en https://openweathermap.org/api)
+API_KEY = 'TU_CLAVE_API_AQUI'  # Reemplaza con tu clave real, e.g., 'abcd1234efgh5678'
 
 # Calibración de offset: promedio de lecturas en cero flujo
 def calibrate_offset(num_samples=100):
@@ -31,24 +34,25 @@ def calibrate_offset(num_samples=100):
 
 offset = calibrate_offset()  # Ejecuta al inicio
 
-# Función para obtener clima de Open-Meteo API
+# Función para obtener clima de OpenWeatherMap API
 def obtener_clima(lat, lon):
     """
-    Obtiene temperatura y presión de Open-Meteo API.
+    Obtiene temperatura y presión de OpenWeatherMap API.
     lat/lon: Coordenadas GPS (e.g., 19.4326 para lat de Mexico City, -99.1332 para lon).
     Retorna (temp, press) o (None, None) si falla.
     """
     try:
-        url = f"https://api.open-meteo.com/v1/current?latitude={lat}&longitude={lon}&current=temperature_2m,pressure_msl&timezone=America/Mexico_City"  # Ajusta timezone si no es MX
+        # URL para datos actuales: https://api.openweathermap.org/data/2.5/weather
+        url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            temp = data['current']['temperature_2m']  # En °C
-            press = data['current']['pressure_msl']   # En hPa
-            print(f"Clima actualizado: Temp={temp}°C, Press={press} hPa")
+            temp = data['main']['temp']  # En °C (por units=metric)
+            press = data['main']['pressure']  # En hPa
+            print(f"Clima actualizado (OpenWeatherMap): Temp={temp}°C, Press={press} hPa")
             return temp, press
         else:
-            print(f"Error en API: {response.status_code}")
+            print(f"Error en API: {response.status_code} - {response.text}")
             return None, None
     except Exception as e:
         print(f"Error al consultar API: {e}")
@@ -60,12 +64,16 @@ ubicacion_input = input("Ingresa latitud y longitud (e.g., 19.4326,-99.1332) o c
 if ',' in ubicacion_input:
     lat, lon = map(float, ubicacion_input.split(','))
 else:
-    # Si es ciudad, usa una aproximación (puedes mejorar con geocode API si quieres)
-    # Por simplicidad, usa coordenadas fijas basadas en ciudad; ajusta manualmente
-    if "mexico" in ubicacion_input.lower():
+    # Si es ciudad, usa coordenadas aproximadas (agregué más ejemplos)
+    ubicacion_lower = ubicacion_input.lower()
+    if "mexico" in ubicacion_lower:
         lat, lon = 19.4326, -99.1332
+    elif "bogota" in ubicacion_lower:
+        lat, lon = 4.7110, -74.0721
+    elif "buenos aires" in ubicacion_lower:
+        lat, lon = -34.6037, -58.3816
     else:
-        lat, lon = 0, 0  # Default; ajusta
+        lat, lon = 0, 0  # Default; ajusta manualmente
     print(f"Usando coordenadas aproximadas para '{ubicacion_input}': lat={lat}, lon={lon}")
 
 # Obtener clima inicial
@@ -219,7 +227,7 @@ if times:
         ax4.set_ylabel('Volumen por burbuja (L)')
         ax4.legend()
 
-    plt.suptitle('Flujo, Volumen, Temp, Press y Burbujas a lo largo del Tiempo')
+    plt.suptitle('Flujo, Volumen, Temp, Press y Burbujas a lo largo del Tiempo (OpenWeatherMap)')
     plt.tight_layout()
     plt.show()
 else:
