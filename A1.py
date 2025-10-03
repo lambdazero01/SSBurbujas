@@ -1,26 +1,43 @@
 import pandas as pd
-import glob
 
-# Ruta donde están tus CSVs (ajusta si no están en la misma carpeta)
-ruta = "./"  
+# Archivo ya unificado pero mezclado
+archivo = "sensor_data_unificado.csv"
 
-# Buscar todos los CSV que empiecen con "sensor_data_combined"
-archivos = glob.glob(ruta + "sensor_data_combined_*.csv")
+# Listas para almacenar las líneas de cada sección
+lineas_times = []
+lineas_burbujas = []
 
-# Lista para almacenar los DataFrames
-dataframes = []
+# Estado: estamos leyendo qué parte?
+parte_burbujas = False
 
-for archivo in archivos:
-    try:
-        df = pd.read_csv(archivo)
-        dataframes.append(df)
-    except Exception as e:
-        print(f"No se pudo leer {archivo}: {e}")
+with open(archivo, "r") as f:
+    for linea in f:
+        # Detectar separador
+        if "--- DATOS DE BURBUJAS" in linea:
+            parte_burbujas = True
+            continue  # saltamos esta línea
+        
+        # Guardar en la parte correspondiente
+        if parte_burbujas:
+            lineas_burbujas.append(linea)
+        else:
+            lineas_times.append(linea)
 
-# Concatenar todos los DataFrames
-df_final = pd.concat(dataframes, ignore_index=True)
+# Guardar en archivos temporales limpios
+with open("temp_times.csv", "w") as f:
+    f.writelines(lineas_times)
 
-# Guardar en un único CSV
-df_final.to_csv("sensor_data_unificado.csv", index=False)
+with open("temp_burbujas.csv", "w") as f:
+    f.writelines(lineas_burbujas)
 
-print(f"CSV unificado generado: sensor_data_unificado.csv")
+# Cargar con pandas (ignora filas vacías)
+df_times = pd.read_csv("temp_times.csv").dropna(how="all")
+df_burbujas = pd.read_csv("temp_burbujas.csv").dropna(how="all")
+
+# Guardar los CSV finales
+df_times.to_csv("sensor_data_unificado_times.csv", index=False)
+df_burbujas.to_csv("sensor_data_unificado_burbujas.csv", index=False)
+
+print("✅ Se han creado:")
+print("  - sensor_data_unificado_times.csv (datos principales)")
+print("  - sensor_data_unificado_burbujas.csv (datos de burbujas)")
